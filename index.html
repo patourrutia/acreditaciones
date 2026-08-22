@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Prueba de conexión - Acreditaciones Ideal Control</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/msal/2.38.3/msal-browser.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <style>
   body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
   h1 { font-size: 1.4rem; }
@@ -91,12 +91,26 @@ function configReady() {
 
 if (!configReady()) {
   btnLogin.disabled = true;
+  setStatus("Config pendiente: falta reemplazar CLIENT_ID y TENANT_ID en el código.", "warn");
+} else if (typeof msal === "undefined") {
+  // La librería MSAL no llegó a cargar (bloqueo de red, adblock, CDN caído, etc.)
+  btnLogin.disabled = true;
+  setStatus("No se pudo cargar la librería de Microsoft (MSAL) desde el CDN. Revisa tu conexión o si algo está bloqueando el script, y recarga la página.", "err");
 } else {
-  msalInstance = new msal.PublicClientApplication(msalConfig);
-  setStatus("Config cargada. Haz clic en 'Iniciar sesión con Microsoft'.", "warn");
+  try {
+    msalInstance = new msal.PublicClientApplication(msalConfig);
+    setStatus("Config cargada. Haz clic en 'Iniciar sesión con Microsoft'.", "warn");
+  } catch (err) {
+    btnLogin.disabled = true;
+    setStatus("Error inicializando MSAL: " + err.message, "err");
+  }
 }
 
 btnLogin.addEventListener("click", async () => {
+  if (!msalInstance) {
+    setStatus("MSAL no está inicializado. Revisa el mensaje de arriba y recarga la página.", "err");
+    return;
+  }
   try {
     const result = await msalInstance.loginPopup({
       scopes: ["Files.ReadWrite"] // en producción: usar Files.ReadWrite.Selected con Sites.Selected según Fase 3
