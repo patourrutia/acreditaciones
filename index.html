@@ -2013,21 +2013,54 @@ async function getMsalToken(){
   catch(e){ return (await app.acquireTokenPopup(req)).accessToken; }
 }
 
-async function graphRangeGetAll(token){
-  const url = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/workbook/worksheets('AppData')/range(address='B2:B7')`;
-  const resp = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
-  if(!resp.ok) throw new Error('No se pudo leer AppData desde Excel (HTTP '+resp.status+').');
-  const data = await resp.json();
-  return data.values.map(r=>r[0]);
+async function withSession(token, fn){
+  const baseUrl = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/workbook`;
+  let sessionId = null;
+  try{
+    const r = await fetch(`${baseUrl}/createSession`, {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ persistChanges:true })
+    });
+    if(r.ok){ sessionId = (await r.json()).id; }
+  }catch(e){ /* seguimos sin sesión si falla */ }
+  const headers = { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' };
+  if(sessionId) headers['workbook-session-id'] = sessionId;
+  try{ return await fn(baseUrl, headers); }
+  finally{
+    if(sessionId){
+      try{ await fetch(`${baseUrl}/closeSession`, { method:'POST', headers:{ Authorization:`Bearer ${token}`, 'workbook-session-id':sessionId } }); }
+      catch(e){ /* ignorar */ }
+    }
+  }
 }
-async function graphRangeSetAll(token, valuesArr){
-  const url = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/workbook/worksheets('AppData')/range(address='B2:B7')`;
-  const resp = await fetch(url, {
-    method:'PATCH',
-    headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ values: valuesArr.map(v=>[v==null?'':v]) })
+async function graphErrorDetail(resp){
+  try{ const body = await resp.json(); return body?.error?.message || body?.error?.code || JSON.stringify(body); }
+  catch(e){ try{ return await resp.text(); }catch(e2){ return '(sin detalle)'; } }
+}
+async function tableGetAllRows(token){
+  return withSession(token, async (baseUrl, headers)=>{
+    const url = `${baseUrl}/tables/AppData/rows`;
+    const resp = await fetch(url, { headers });
+    if(!resp.ok) throw new Error('No se pudo leer AppData (HTTP '+resp.status+': '+await graphErrorDetail(resp)+')');
+    const data = await resp.json();
+    return data.value;
   });
-  if(!resp.ok) throw new Error('No se pudo escribir AppData en Excel (HTTP '+resp.status+').');
+}
+async function tableReplaceAllRows(token, mapKV){
+  return withSession(token, async (baseUrl, headers)=>{
+    const listUrl = `${baseUrl}/tables/AppData/rows`;
+    const listResp = await fetch(listUrl, { headers });
+    if(!listResp.ok) throw new Error('No se pudo leer AppData antes de escribir (HTTP '+listResp.status+': '+await graphErrorDetail(listResp)+')');
+    const data = await listResp.json();
+    for(let i=data.value.length-1;i>=0;i--){
+      await fetch(`${baseUrl}/tables/AppData/rows/itemAt(index=${i})`, { method:'DELETE', headers });
+    }
+    const addUrl = `${baseUrl}/tables/AppData/rows/add`;
+    const values = KEYS_APPDATA.map(k=>[k, mapKV[k]==null?'':mapKV[k]]);
+    const addResp = await fetch(addUrl, { method:'POST', headers, body: JSON.stringify({ values }) });
+    if(!addResp.ok) throw new Error('No se pudo escribir AppData (HTTP '+addResp.status+': '+await graphErrorDetail(addResp)+')');
+  });
 }
 
 let ultimoErrorStore = '';
@@ -2037,8 +2070,9 @@ const store={
     if(idx===-1) return null;
     try{
       const token = await getMsalToken();
-      const all = await graphRangeGetAll(token);
-      const raw = all[idx];
+      const rows = await tableGetAllRows(token);
+      const row = rows.find(r=>r.values[0][0]===k);
+      const raw = row ? row.values[0][1] : null;
       return raw ? JSON.parse(raw) : null;
     }catch(e){ console.error('store.get',k,e); ultimoErrorStore = e.message||String(e); return null; }
   },
@@ -2047,9 +2081,12 @@ const store={
     if(idx===-1) return false;
     try{
       const token = await getMsalToken();
-      const all = await graphRangeGetAll(token);
-      all[idx] = JSON.stringify(v);
-      await graphRangeSetAll(token, all);
+      const rows = await tableGetAllRows(token);
+      const map = {};
+      KEYS_APPDATA.forEach(key=>{ map[key]=''; });
+      rows.forEach(r=>{ const [rk,rv]=r.values[0]; if(KEYS_APPDATA.includes(rk)) map[rk]=rv; });
+      map[k] = JSON.stringify(v);
+      await tableReplaceAllRows(token, map);
       return true;
     }catch(e){ console.error('store.set',k,e); ultimoErrorStore = e.message||String(e); return false; }
   }
