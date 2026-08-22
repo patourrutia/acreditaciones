@@ -297,7 +297,16 @@ async function resolverSitio(tk){
   const r = await fetch(url, { headers:{ Authorization:'Bearer ' + tk } });
   if(!r.ok) throw new Error('No se pudo encontrar el sitio (HTTP ' + r.status + '): ' + await detalleError(r));
   const d = await r.json();
+  log('Sitio: ' + (d.displayName||d.name) + ' — ' + d.webUrl, 'ok');
   return d.id;
+}
+
+async function probarLecturaListas(tk){
+  const r = await fetch('https://graph.microsoft.com/v1.0/sites/' + siteId + '/lists', { headers:{ Authorization:'Bearer ' + tk } });
+  if(!r.ok){ log('No se pueden leer las listas del sitio (HTTP ' + r.status + '): ' + await detalleError(r), 'err'); return false; }
+  const d = await r.json();
+  log('Lectura de listas OK: el sitio tiene ' + (d.value||[]).length + ' listas.', 'ok');
+  return true;
 }
 
 async function listaExiste(tk, nombre){
@@ -308,23 +317,27 @@ async function listaExiste(tk, nombre){
   return Array.isArray(d.value) && d.value.length > 0;
 }
 
-async function crearLista(tk, def){
-  const body = {
-    displayName: def.nombre,
-    description: def.desc,
-    list: { template: 'genericList' },
-    columns: def.columnas.map(c=>{
-      const { name, ...tipo } = c;
-      return { name, ...tipo };
-    })
-  };
+// Paso 1: crear la lista con el payload mínimo posible
+async function crearListaMinima(tk, def){
+  const body = { displayName: def.nombre, description: def.desc, list:{ template:'genericList' } };
   const r = await fetch('https://graph.microsoft.com/v1.0/sites/' + siteId + '/lists', {
     method:'POST',
     headers:{ Authorization:'Bearer ' + tk, 'Content-Type':'application/json' },
     body: JSON.stringify(body)
   });
-  if(!r.ok) throw new Error('HTTP ' + r.status + ': ' + await detalleError(r));
+  if(!r.ok) throw new Error('crear lista → HTTP ' + r.status + ': ' + await detalleError(r));
   return await r.json();
+}
+
+// Paso 2: agregar cada columna por separado
+async function agregarColumna(tk, listId, col){
+  const { name, ...tipo } = col;
+  const r = await fetch('https://graph.microsoft.com/v1.0/sites/' + siteId + '/lists/' + listId + '/columns', {
+    method:'POST',
+    headers:{ Authorization:'Bearer ' + tk, 'Content-Type':'application/json' },
+    body: JSON.stringify({ name, ...tipo })
+  });
+  if(!r.ok) throw new Error('columna "' + name + '" → HTTP ' + r.status + ': ' + await detalleError(r));
 }
 
 btnCrear.addEventListener('click', async ()=>{
@@ -337,7 +350,8 @@ btnCrear.addEventListener('click', async ()=>{
 
     log('Buscando el sitio ' + SITE_PATH + '…', 'run');
     siteId = await resolverSitio(tk);
-    log('Sitio encontrado.', 'ok');
+
+    await probarLecturaListas(tk);
 
     let creadas = 0, omitidas = 0, fallidas = 0;
     for(const def of LISTAS){
@@ -348,8 +362,13 @@ btnCrear.addEventListener('click', async ()=>{
           continue;
         }
         log('Creando ' + def.nombre + '…', 'run');
-        await crearLista(tk, def);
-        log(def.nombre + ' — creada con ' + def.columnas.length + ' columnas.', 'ok');
+        const lista = await crearListaMinima(tk, def);
+        let colsOk = 0, colsErr = 0;
+        for(const col of def.columnas){
+          try{ await agregarColumna(tk, lista.id, col); colsOk++; }
+          catch(ec){ colsErr++; log('   ' + (ec.message||ec), 'err'); }
+        }
+        log(def.nombre + ' — creada. Columnas: ' + colsOk + ' ok' + (colsErr? (', ' + colsErr + ' con error'):''), colsErr? 'err':'ok');
         creadas++;
       }catch(e){
         log(def.nombre + ' — ERROR: ' + (e.message||e), 'err');
