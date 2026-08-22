@@ -228,6 +228,15 @@ const msalConfig = {
   cache:{ cacheLocation:'sessionStorage' }
 };
 
+let msalListo = false;
+
+async function iniciarMsal(){
+  if(msalListo) return true;
+  await msalInstance.initialize();
+  msalListo = true;
+  return true;
+}
+
 if(typeof msal === 'undefined'){
   estado('No se pudo cargar la librería de Microsoft. Revisa tu conexión o si algo bloquea el script, y recarga.', 'err');
   btnLogin.disabled = true;
@@ -244,6 +253,7 @@ if(typeof msal === 'undefined'){
 btnLogin.addEventListener('click', async ()=>{
   if(!msalInstance) return;
   try{
+    await iniciarMsal();
     const r = await msalInstance.loginPopup({ scopes: SCOPES });
     cuenta = r.account;
     msalInstance.setActiveAccount(cuenta);
@@ -257,6 +267,7 @@ btnLogin.addEventListener('click', async ()=>{
 });
 
 async function token(){
+  await iniciarMsal();
   const req = { scopes: SCOPES, account: cuenta };
   try{ return (await msalInstance.acquireTokenSilent(req)).accessToken; }
   catch(e){ return (await msalInstance.acquireTokenPopup(req)).accessToken; }
