@@ -2054,14 +2054,15 @@ async function descargarExcelBytes(token){
   const url = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/content`;
   const resp = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
   if(!resp.ok) throw new Error('No se pudo descargar el Excel (HTTP '+resp.status+': '+await graphErrorDetail(resp)+')');
-  return await resp.arrayBuffer();
+  const buf = await resp.arrayBuffer();
+  return new Uint8Array(buf);
 }
-async function subirExcelBytes(token, arrayBuffer){
+async function subirExcelBytes(token, uint8arr){
   const url = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/content`;
   const resp = await fetch(url, {
     method:'PUT',
     headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/octet-stream' },
-    body: arrayBuffer
+    body: uint8arr
   });
   if(!resp.ok) throw new Error('No se pudo guardar el Excel (HTTP '+resp.status+': '+await graphErrorDetail(resp)+')');
 }
@@ -2109,7 +2110,7 @@ const store={
       map[k] = JSON.stringify(v);
       escribirAppDataEnWorkbook(wb, map);
       const nuevoArrayBuffer = XLSX.write(wb, { type:'array', bookType:'xlsx' });
-      await subirExcelBytes(token, nuevoArrayBuffer);
+      await subirExcelBytes(token, new Uint8Array(nuevoArrayBuffer));
       return true;
     }catch(e){ console.error('store.set',k,e); ultimoErrorStore = e.message||String(e); return false; }
   }
