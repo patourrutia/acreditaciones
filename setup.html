@@ -166,7 +166,7 @@ const LISTAS = [
     { name:'activo',        ...siNo() },
     { name:'metodo',        ...texto(150) },
     { name:'plataforma',    ...texto(150) },
-    { name:'plataformaUrl', ...texto(400) },
+    { name:'plataformaUrl', ...texto(255) },
     { name:'procedimiento', ...textoLargo() }
   ]},
   { nombre:'Acred_Contactos', desc:'Contactos por mandante', columnas:[
@@ -309,12 +309,19 @@ async function probarLecturaListas(tk){
   return true;
 }
 
-async function listaExiste(tk, nombre){
+async function obtenerLista(tk, nombre){
   const url = 'https://graph.microsoft.com/v1.0/sites/' + siteId + '/lists?$filter=displayName eq \'' + nombre + '\'';
   const r = await fetch(url, { headers:{ Authorization:'Bearer ' + tk } });
-  if(!r.ok) return false;
+  if(!r.ok) return null;
   const d = await r.json();
-  return Array.isArray(d.value) && d.value.length > 0;
+  return (Array.isArray(d.value) && d.value.length) ? d.value[0] : null;
+}
+
+async function columnasExistentes(tk, listId){
+  const r = await fetch('https://graph.microsoft.com/v1.0/sites/' + siteId + '/lists/' + listId + '/columns', { headers:{ Authorization:'Bearer ' + tk } });
+  if(!r.ok) return [];
+  const d = await r.json();
+  return (d.value||[]).map(c=>c.name);
 }
 
 // Paso 1: crear la lista con el payload mínimo posible
@@ -353,30 +360,48 @@ btnCrear.addEventListener('click', async ()=>{
 
     await probarLecturaListas(tk);
 
-    let creadas = 0, omitidas = 0, fallidas = 0;
+    let creadas = 0, reparadas = 0, intactas = 0, fallidas = 0;
     for(const def of LISTAS){
       try{
-        if(await listaExiste(tk, def.nombre)){
-          log(def.nombre + ' — ya existía, se omite.', 'skip');
-          omitidas++;
+        let lista = await obtenerLista(tk, def.nombre);
+
+        if(lista){
+          // Ya existe: agregar solo las columnas que falten
+          const existentes = await columnasExistentes(tk, lista.id);
+          const faltantes = def.columnas.filter(c=>!existentes.includes(c.name));
+          if(faltantes.length === 0){
+            log(def.nombre + ' — ya existía y está completa.', 'skip');
+            intactas++;
+            continue;
+          }
+          log(def.nombre + ' — existe, faltan ' + faltantes.length + ' columna(s). Agregando…', 'run');
+          let ok = 0, err = 0;
+          for(const col of faltantes){
+            try{ await agregarColumna(tk, lista.id, col); ok++; }
+            catch(ec){ err++; log('   ' + (ec.message||ec), 'err'); }
+          }
+          log(def.nombre + ' — reparada. Columnas agregadas: ' + ok + (err? (', ' + err + ' con error'):''), err? 'err':'ok');
+          if(err) fallidas++; else reparadas++;
           continue;
         }
+
+        // No existe: crear desde cero
         log('Creando ' + def.nombre + '…', 'run');
-        const lista = await crearListaMinima(tk, def);
+        lista = await crearListaMinima(tk, def);
         let colsOk = 0, colsErr = 0;
         for(const col of def.columnas){
           try{ await agregarColumna(tk, lista.id, col); colsOk++; }
           catch(ec){ colsErr++; log('   ' + (ec.message||ec), 'err'); }
         }
         log(def.nombre + ' — creada. Columnas: ' + colsOk + ' ok' + (colsErr? (', ' + colsErr + ' con error'):''), colsErr? 'err':'ok');
-        creadas++;
+        if(colsErr) fallidas++; else creadas++;
       }catch(e){
         log(def.nombre + ' — ERROR: ' + (e.message||e), 'err');
         fallidas++;
       }
     }
 
-    const resumen = creadas + ' creadas, ' + omitidas + ' ya existían, ' + fallidas + ' con error.';
+    const resumen = creadas + ' creadas, ' + reparadas + ' reparadas, ' + intactas + ' ya completas, ' + fallidas + ' con error.';
     if(fallidas === 0) estado('Configuración completada: ' + resumen, 'ok');
     else estado('Terminó con problemas: ' + resumen + ' Revisa el detalle abajo.', 'err');
 
