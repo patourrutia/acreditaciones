@@ -269,8 +269,22 @@ btnLogin.addEventListener('click', async ()=>{
 async function token(){
   await iniciarMsal();
   const req = { scopes: SCOPES, account: cuenta };
-  try{ return (await msalInstance.acquireTokenSilent(req)).accessToken; }
+  try{
+    // forceRefresh evita usar un token cacheado emitido antes de otorgar el permiso
+    return (await msalInstance.acquireTokenSilent({ ...req, forceRefresh:true })).accessToken;
+  }
   catch(e){ return (await msalInstance.acquireTokenPopup(req)).accessToken; }
+}
+
+function mostrarScopesDelToken(tk){
+  try{
+    const payload = JSON.parse(atob(tk.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    const scp = payload.scp || '(sin scopes)';
+    log('Permisos efectivos del token: ' + scp, scp.includes('Sites.ReadWrite.All') ? 'ok' : 'err');
+    if(!scp.includes('Sites.ReadWrite.All')){
+      log('El token NO incluye Sites.ReadWrite.All. Cierra sesión, borra la caché del navegador y vuelve a entrar.', 'err');
+    }
+  }catch(e){ /* si no se puede leer, seguimos igual */ }
 }
 
 async function detalleError(resp){
@@ -319,6 +333,7 @@ btnCrear.addEventListener('click', async ()=>{
   try{
     estado('Conectando con el sitio de SharePoint…', 'warn');
     const tk = await token();
+    mostrarScopesDelToken(tk);
 
     log('Buscando el sitio ' + SITE_PATH + '…', 'run');
     siteId = await resolverSitio(tk);
