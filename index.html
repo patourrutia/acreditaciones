@@ -2024,7 +2024,7 @@ function selSiNo(valorActivo,onCambio,etq){
 
 /* ---------- 3. Almacenamiento en Excel (SharePoint/OneDrive vía Graph API) ---------- */
 const DRIVE_ID = "b!C6dIbL4tFEeBZI2wav3nFmZZeA26E29JrxXiixbiwNH5YD5brMgLSJdGoCFhEnRF";
-const ITEM_ID  = "01FTPGMWVK74BHATFO2ZF2IMAPR7R5ANBB"; // Acred_Datos_Base_v2.xlsx
+const ITEM_ID  = "01FTPGMWQA4ZS26VJGYRDJMNYFDUMXC2ZF"; // AppData.xlsx
 // Orden fijo de las filas B2:B7 en la hoja "AppData" del Excel.
 const KEYS_APPDATA = ['acred:clientes','acred:personal','acred:acreditaciones','acred:tipos','acred:bitacora','acred:usuarios'];
 
@@ -2136,7 +2136,7 @@ const store={
     }catch(e){ console.error('store.set',k,e); ultimoErrorStore = e.message||String(e); return false; }
   }
 };
-const APP_VERSION = 'v5-downloadUrl';
+const APP_VERSION = 'v6-appdata';
 function detectarAlmacenamiento(){
   storeInfo='Excel en OneDrive vía Microsoft 365 · '+APP_VERSION;
   const h=$('hintStore'); if(h)h.textContent='Almacenamiento: '+storeInfo;
