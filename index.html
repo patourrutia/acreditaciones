@@ -2106,37 +2106,64 @@ function abrirWorkbook(bytes){
   }
 }
 
+// Cola: garantiza que solo una operación toque el Excel a la vez.
+let _colaExcel = Promise.resolve();
+function enCola(fn){
+  const resultado = _colaExcel.then(fn, fn);
+  _colaExcel = resultado.then(()=>{}, ()=>{});
+  return resultado;
+}
+function esperar(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
 let ultimoErrorStore = '';
 const store={
   async get(k){
     const idx = KEYS_APPDATA.indexOf(k);
     if(idx===-1) return null;
-    try{
-      const token = await getMsalToken();
-      const bytes = await descargarExcelBytes(token);
-      const wb = abrirWorkbook(bytes);
-      const map = leerAppDataDeWorkbook(wb);
-      const raw = map[k];
-      return raw ? JSON.parse(raw) : null;
-    }catch(e){ console.error('store.get',k,e); ultimoErrorStore = e.message||String(e); return null; }
+    return enCola(async ()=>{
+      try{
+        const token = await getMsalToken();
+        const bytes = await descargarExcelBytes(token);
+        const wb = abrirWorkbook(bytes);
+        const map = leerAppDataDeWorkbook(wb);
+        const raw = map[k];
+        return raw ? JSON.parse(raw) : null;
+      }catch(e){ console.error('store.get',k,e); ultimoErrorStore = e.message||String(e); return null; }
+    });
   },
   async set(k,v){
     const idx = KEYS_APPDATA.indexOf(k);
     if(idx===-1) return false;
-    try{
-      const token = await getMsalToken();
-      const bytes = await descargarExcelBytes(token);
-      const wb = abrirWorkbook(bytes);
-      const map = leerAppDataDeWorkbook(wb);
-      map[k] = JSON.stringify(v);
-      escribirAppDataEnWorkbook(wb, map);
-      const nuevoArrayBuffer = XLSX.write(wb, { type:'array', bookType:'xlsx' });
-      await subirExcelBytes(token, new Uint8Array(nuevoArrayBuffer));
-      return true;
-    }catch(e){ console.error('store.set',k,e); ultimoErrorStore = e.message||String(e); return false; }
+    return enCola(async ()=>{
+      const MAX_INTENTOS = 4;
+      for(let intento=1; intento<=MAX_INTENTOS; intento++){
+        try{
+          const token = await getMsalToken();
+          const bytes = await descargarExcelBytes(token);
+          const wb = abrirWorkbook(bytes);
+          const map = leerAppDataDeWorkbook(wb);
+          map[k] = JSON.stringify(v);
+          escribirAppDataEnWorkbook(wb, map);
+          const nuevo = XLSX.write(wb, { type:'array', bookType:'xlsx' });
+          await subirExcelBytes(token, new Uint8Array(nuevo));
+          return true;
+        }catch(e){
+          const msg = e.message||String(e);
+          const esConflicto = msg.includes('409') || msg.toLowerCase().includes('etag') || msg.includes('423') || msg.includes('locked');
+          if(esConflicto && intento < MAX_INTENTOS){
+            await esperar(400 * intento); // espera creciente y reintenta con la versión más reciente
+            continue;
+          }
+          console.error('store.set',k,e);
+          ultimoErrorStore = msg;
+          return false;
+        }
+      }
+      return false;
+    });
   }
 };
-const APP_VERSION = 'v6-appdata';
+const APP_VERSION = 'v7-cola';
 function detectarAlmacenamiento(){
   storeInfo='Excel en OneDrive vía Microsoft 365 · '+APP_VERSION;
   const h=$('hintStore'); if(h)h.textContent='Almacenamiento: '+storeInfo;
