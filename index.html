@@ -2098,6 +2098,14 @@ function escribirAppDataEnWorkbook(wb, map){
   if(!wb.SheetNames.includes('AppData')) wb.SheetNames.push('AppData');
 }
 
+function abrirWorkbook(bytes){
+  try{
+    return XLSX.read(bytes, { type:'array' });
+  }catch(e){
+    throw new Error('No se pudo abrir el Excel descargado ('+bytes.length+' bytes): '+(e.message||e));
+  }
+}
+
 let ultimoErrorStore = '';
 const store={
   async get(k){
@@ -2106,7 +2114,7 @@ const store={
     try{
       const token = await getMsalToken();
       const bytes = await descargarExcelBytes(token);
-      const wb = XLSX.read(bytes, { type:'array' });
+      const wb = abrirWorkbook(bytes);
       const map = leerAppDataDeWorkbook(wb);
       const raw = map[k];
       return raw ? JSON.parse(raw) : null;
@@ -2118,7 +2126,7 @@ const store={
     try{
       const token = await getMsalToken();
       const bytes = await descargarExcelBytes(token);
-      const wb = XLSX.read(bytes, { type:'array' });
+      const wb = abrirWorkbook(bytes);
       const map = leerAppDataDeWorkbook(wb);
       map[k] = JSON.stringify(v);
       escribirAppDataEnWorkbook(wb, map);
@@ -2128,8 +2136,9 @@ const store={
     }catch(e){ console.error('store.set',k,e); ultimoErrorStore = e.message||String(e); return false; }
   }
 };
+const APP_VERSION = 'v5-downloadUrl';
 function detectarAlmacenamiento(){
-  storeInfo='Guardado en Excel (SharePoint/OneDrive) vía Microsoft 365.';
+  storeInfo='Excel en OneDrive vía Microsoft 365 · '+APP_VERSION;
   const h=$('hintStore'); if(h)h.textContent='Almacenamiento: '+storeInfo;
 }
 
