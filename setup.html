@@ -141,7 +141,7 @@ const CLIENT_ID = "4f865961-b159-4572-90ea-bf7d12cc9f75";
 const TENANT_ID = "7b0a5418-0340-4fc4-941c-4b148bb14d9e";
 const SITE_HOST = "idealcontrol365.sharepoint.com";
 const SITE_PATH = "/sites/Integraciones";
-const SCOPES = ["Sites.ReadWrite.All"];
+const SCOPES = ["Sites.Manage.All"];
 /* ========================================================= */
 
 /* Definición de las listas: cada columna con su tipo Graph */
@@ -280,9 +280,9 @@ function mostrarScopesDelToken(tk){
   try{
     const payload = JSON.parse(atob(tk.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
     const scp = payload.scp || '(sin scopes)';
-    log('Permisos efectivos del token: ' + scp, scp.includes('Sites.ReadWrite.All') ? 'ok' : 'err');
-    if(!scp.includes('Sites.ReadWrite.All')){
-      log('El token NO incluye Sites.ReadWrite.All. Cierra sesión, borra la caché del navegador y vuelve a entrar.', 'err');
+    log('Permisos efectivos del token: ' + scp, scp.includes('Sites.Manage.All') ? 'ok' : 'err');
+    if(!scp.includes('Sites.Manage.All')){
+      log('El token NO incluye Sites.Manage.All. Cierra sesión, borra la caché del navegador y vuelve a entrar.', 'err');
     }
   }catch(e){ /* si no se puede leer, seguimos igual */ }
 }
