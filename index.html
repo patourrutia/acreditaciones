@@ -2051,11 +2051,24 @@ async function graphErrorDetail(resp){
 }
 
 async function descargarExcelBytes(token){
-  const url = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/content`;
-  const resp = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
-  if(!resp.ok) throw new Error('No se pudo descargar el Excel (HTTP '+resp.status+': '+await graphErrorDetail(resp)+')');
+  // /content devuelve una redirección que el navegador no maneja bien (CORS).
+  // Se pide la downloadUrl pre-autenticada y se descarga de ahí, SIN header Authorization.
+  const metaUrl = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}?select=id,name,@microsoft.graph.downloadUrl`;
+  const metaResp = await fetch(metaUrl, { headers:{ Authorization:`Bearer ${token}` } });
+  if(!metaResp.ok) throw new Error('No se pudo obtener el enlace de descarga (HTTP '+metaResp.status+': '+await graphErrorDetail(metaResp)+')');
+  const meta = await metaResp.json();
+  const dlUrl = meta['@microsoft.graph.downloadUrl'];
+  if(!dlUrl) throw new Error('Microsoft no entregó un enlace de descarga para el archivo.');
+
+  const resp = await fetch(dlUrl); // sin Authorization: la URL ya viene pre-autenticada
+  if(!resp.ok) throw new Error('No se pudo descargar el Excel (HTTP '+resp.status+')');
   const buf = await resp.arrayBuffer();
-  return new Uint8Array(buf);
+  const bytes = new Uint8Array(buf);
+  // Un .xlsx es un ZIP: debe empezar con 'PK'
+  if(bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4B){
+    throw new Error('El archivo descargado no es un Excel válido (se recibieron '+bytes.length+' bytes).');
+  }
+  return bytes;
 }
 async function subirExcelBytes(token, uint8arr){
   const url = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/content`;
