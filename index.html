@@ -2030,7 +2030,7 @@ async function graphRangeSetAll(token, valuesArr){
   if(!resp.ok) throw new Error('No se pudo escribir AppData en Excel (HTTP '+resp.status+').');
 }
 
-let hayEntorno=false, hayLocal=false; // se mantienen solo por compatibilidad con detectarAlmacenamiento()
+let ultimoErrorStore = '';
 const store={
   async get(k){
     const idx = KEYS_APPDATA.indexOf(k);
@@ -2040,7 +2040,7 @@ const store={
       const all = await graphRangeGetAll(token);
       const raw = all[idx];
       return raw ? JSON.parse(raw) : null;
-    }catch(e){ console.error('store.get',k,e); return null; }
+    }catch(e){ console.error('store.get',k,e); ultimoErrorStore = e.message||String(e); return null; }
   },
   async set(k,v){
     const idx = KEYS_APPDATA.indexOf(k);
@@ -2051,7 +2051,7 @@ const store={
       all[idx] = JSON.stringify(v);
       await graphRangeSetAll(token, all);
       return true;
-    }catch(e){ console.error('store.set',k,e); return false; }
+    }catch(e){ console.error('store.set',k,e); ultimoErrorStore = e.message||String(e); return false; }
   }
 };
 function detectarAlmacenamiento(){
@@ -2096,7 +2096,7 @@ async function guardar(clave,valor,idEstado){
   estado(idEstado,'','Guardando...');
   const ok=await store.set(clave,valor);
   estado(idEstado,ok?'ok':'err',ok?'Guardado':'No se pudo guardar');
-  if(!ok)aviso('err','No se pudo guardar. Descarga un respaldo antes de cerrar la página.');
+  if(!ok)aviso('err','No se pudo guardar'+(ultimoErrorStore?(': '+ultimoErrorStore):'')+'. Descarga un respaldo antes de cerrar la página.');
   sello();
 }
 const gAcr =()=>guardar(K_ACR ,acreds  ,'statusA');
