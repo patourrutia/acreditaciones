@@ -54,6 +54,7 @@
       <tr><td><code>Acred_Acreditaciones</code></td><td>Acreditaciones (tabla central)</td></tr>
       <tr><td><code>Acred_Bitacora</code></td><td>Bitácora de cambios</td></tr>
       <tr><td><code>Acred_Tipos</code></td><td>Catálogo de tipos de emplazamiento</td></tr>
+      <tr><td><code>Acred_Config</code></td><td>Configuración interna</td></tr>
     </tbody>
   </table>
   <p class="nota">Si una lista ya existe, se omite y no se altera. Puedes volver a ejecutar esta página sin riesgo.</p>
@@ -205,6 +206,10 @@ const LISTAS = [
   ]},
   { nombre:'Acred_Tipos', desc:'Catálogo de tipos de emplazamiento', columnas:[
     { name:'tipo', ...texto(100) }
+  ]},
+  { nombre:'Acred_Config', desc:'Configuración interna de la plataforma', columnas:[
+    { name:'clave', ...texto(100) },
+    { name:'valor', ...textoLargo() }
   ]}
 ];
 
